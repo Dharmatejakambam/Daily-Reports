@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Entry Form</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+            display: none; /* Initially hide the table */
+        }
+        th, td {
+            padding: 10px;
+            border: 1px solid #ddd;
+            text-align: left;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        select, input[type="date"], input[type="number"], input[type="text"] {
+            width: 100%;
+            padding: 8px;
+            margin: 4px 0;
+            box-sizing: border-box;
+        }
+        button {
+            display: block;
+            width: 100%;
+            padding: 10px;
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            cursor: pointer;
+            font-size: 16px;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        #employee-selection {
+            margin-bottom: 20px;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+    <h1>Project Entry Form</h1>
+    <div id="employee-selection" style="display: none;">
+        <label for="employee-dropdown">Select Employee (Entering Data):</label>
+        <select id="employee-dropdown"></select>
+        <button onclick="handleEmployeeSelection()">Proceed</button>
+    </div>
+    <table id="data-table">
+        <tr>
+            <th>Date</th>
+            <th>Year</th>
+            <th>Project ID</th>
+            <th>Pay Item</th>
+            <th>Employee</th>
+            <th>Total Quantity</th>
+            <th>Completed Quantity</th>
+            <th>Hours</th>
+            <th class="hidden">Author</th> <!-- Hidden column for the author -->
+        </tr>
+    </table>
+    <button onclick="showModal()">Save Entries</button>
+
+    <!-- The Modal -->
+    <div id="confirmationModal" class="modal">
+        <div class="modal-content">
+            <span class="close" onclick="hideModal()">&times;</span>
+            <p>Are you sure you want to submit the entries?</p>
+            <div class="modal-buttons">
+                <button class="modal-button submit" onclick="confirmSubmission()">Yes</button>
+                <button class="modal-button cancel" onclick="hideModal()">No</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let sheetData = {};
+        let selectedEmployee = '';
+
+        // Function to fetch data from the Google Apps Script
+        function getSheetData() {
+            fetch('https://script.google.com/macros/s/AKfycbwmAnuy7_DsbOvreLUCGh-Dv2MWnZHDwZp08X7kgXZmgLgXBrwnp6NXq6M7CGqIskMzJQ/exec')
+                .then(response => response.json())
+                .then(data => buildInitialView(data))
+                .catch(error => console.error('Error fetching data:', error));
+        }
+
+        // Function to build the initial view with the employee dropdown
+        function buildInitialView(data) {
+            sheetData = data;
+            const employees = data.employees;
+            const employeeDropdown = document.getElementById('employee-dropdown');
+            employeeDropdown.innerHTML = buildOptions(employees);
+            document.getElementById('employee-selection').style.display = 'block';
+        }
+
+        // Function to build the table for data entry
+        function buildTable() {
+            const { data1, employees } = sheetData;
+
+            let table = document.getElementById('data-table');
+            data1.shift(); // Remove headers
+
+            for (let i = 0; i < 10; i++) {
+                let row = table.insertRow();
+
+                // Date field
+                let cell = row.insertCell();
+                cell.innerHTML = `<input type="date" name="date-${i}">`;
+
+                // Year dropdown
+                cell = row.insertCell();
+                cell.innerHTML = buildDropdown('year', i, [...new Set(data1.map(row => row[0]))]);
+
+                // ProjectID dropdown
+                cell = row.insertCell();
+                cell.innerHTML = buildDropdown('projectID', i, []);
+
+                // PayItem dropdown
+                cell = row.insertCell();
+                cell.innerHTML = buildDropdown('payItem', i, []);
+
+                // Employee dropdown
+                cell = row.insertCell();
+                cell.innerHTML = buildDropdown('employee', i, employees);
+
+                // TotalQuantity (view-only)
+                cell = row.insertCell();
+                cell.innerHTML = `<input type="text" name="totalQuantity-${i}" readonly>`;
+
+                // CompletedQuantity (input)
+                cell = row.insertCell();
+                cell.innerHTML = `<input type="number" name="completedQuantity-${i}">`;
+
+                // Hours (input)
+                cell = row.insertCell();
+                cell.innerHTML = `<input type="number" name="hours-${i}">`;
+
+                // Author (hidden)
+                cell = row.insertCell();
+                cell.innerHTML = `<input type="text" name="author-${i}" value="${selectedEmployee}" class="hidden">`;
+            }
+
+            // Attach event listeners to dropdowns
+            attachDropdownListeners();
+            table.style.display = 'table'; // Show the table now that it's built
+        }
+
+        // Function to build a dropdown HTML element
+        function buildDropdown(name, index, options) {
+            let dropdown = `<select name="${name}-${index}">`;
+            dropdown += `<option value="">Select</option>`;
+            options.forEach(option => {
+                dropdown += `<option value="${option}">${option}</option>`;
+            });
+            dropdown += `</select>`;
+            return dropdown;
+        }
+
+        // Function to attach event listeners to the dropdowns
+        function attachDropdownListeners() {
+            const rows = document.getElementById('data-table').rows;
+            for (let i = 1; i < rows.length; i++) {
+                const yearDropdown = rows[i].querySelector(`[name="year-${i-1}"]`);
+                const projectIDDropdown = rows[i].querySelector(`[name="projectID-${i-1}"]`);
+                const payItemDropdown = rows[i].querySelector(`[name="payItem-${i-1}"]`);
+
+                yearDropdown.addEventListener('change', function() {
+                    updateProjectDropdown(i-1);
+                });
+
+                projectIDDropdown.addEventListener('change', function() {
+                    updatePayItemDropdown(i-1);
+                });
+
+                payItemDropdown.addEventListener('change', function() {
+                    updateTotalQuantity(i-1);
+                });
+            }
+        }
+
+        // Function to update the Project dropdown based on selected year
+        function updateProjectDropdown(rowIndex) {
+            const year = document.querySelector(`[name="year-${rowIndex}"]`).value;
+            const projects = [...new Set(sheetData.data1.filter(row => row[0] == year).map(row => row[1]))];
+            const projectDropdown = document.querySelector(`[name="projectID-${rowIndex}"]`);
+            projectDropdown.innerHTML = buildOptions(projects);
+            document.querySelector(`[name="payItem-${rowIndex}"]`).innerHTML = buildOptions([]);
+            document.querySelector(`[name="totalQuantity-${rowIndex}"]`).value = '';
+        }
+
+        // Function to update the Pay Item dropdown based on selected year and project
+        function updatePayItemDropdown(rowIndex) {
+            const year = document.querySelector(`[name="year-${rowIndex}"]`).value;
+            const projectID = document.querySelector(`[name="projectID-${rowIndex}"]`).value;
+            const payItems = [...new Set(sheetData.data1.filter(row => row[0] == year && row[1] == projectID).map(row => row[2]))];
+            const payItemDropdown = document.querySelector(`[name="payItem-${rowIndex}"]`);
+            payItemDropdown.innerHTML = buildOptions(payItems);
+            document.querySelector(`[name="totalQuantity-${rowIndex}"]`).value = '';
+        }
+
+        // Function to build options for dropdowns
+        function buildOptions(options) {
+            let optionsHTML = `<option value="">Select</option>`;
+            options.forEach(option => {
+                optionsHTML += `<option value="${option}">${option}</option>`;
+            });
+            return optionsHTML;
+        }
+
+        // Function to update the Total Quantity field based on selected year, project, and pay item
+        function updateTotalQuantity(rowIndex) {
+            const year = document.querySelector(`[name="year-${rowIndex}"]`).value;
+            const projectID = document.querySelector(`[name="projectID-${rowIndex}"]`).value;
+            const payItem = document.querySelector(`[name="payItem-${rowIndex}"]`).value;
+
+            fetch(`https://script.google.com/macros/s/AKfycbwmAnuy7_DsbOvreLUCGh-Dv2MWnZHDwZp08X7kgXZmgLgXBrwnp6NXq6M7CGqIskMzJQ/exec?year=${year}&projectID=${projectID}&payItem=${payItem}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.querySelector(`[name="totalQuantity-${rowIndex}"]`).value = data.totalQuantity;
+                })
+                .catch(error => console.error('Error fetching total quantity:', error));
+        }
+
+        // Function to save entries to the spreadsheet
+        function saveEntries() {
+            let entries = [];
+            for (let i = 0; i < 10; i++) {
+                let date = document.querySelector(`[name="date-${i}"]`).value;
+                let year = document.querySelector(`[name="year-${i}"]`).value;
+                let projectID = document.querySelector(`[name="projectID-${i}"]`).value;
+                let payItem = document.querySelector(`[name="payItem-${i}"]`).value;
+                let employee = document.querySelector(`[name="employee-${i}"]`).value;
+                let totalQuantity = document.querySelector(`[name="totalQuantity-${i}"]`).value;
+                let completedQuantity = document.querySelector(`[name="completedQuantity-${i}"]`).value;
+                let hours = document.querySelector(`[name="hours-${i}"]`).value;
+                let author = document.querySelector(`[name="author-${i}"]`).value;
+
+                if (completedQuantity || hours) { // Only save entries with completed quantity or hours
+                    let entry = { date, year, projectID, payItem, employee, totalQuantity, completedQuantity, hours, author };
+                    entries.push(entry);
+                }
+            }
+            fetch('https://script.google.com/macros/s/AKfycbwmAnuy7_DsbOvreLUCGh-Dv2MWnZHDwZp08X7kgXZmgLgXBrwnp6NXq6M7CGqIskMzJQ/exec', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(entries),
+            })
+            .then(response => response.json())
+            .then(data => {
+                console.log('Data submitted successfully:', data);
+                clearEntries();
+            })
+            .catch(error => console.error('Error submitting data:', error));
+        }
+
+        // Function to clear entries from the form
+        function clearEntries() {
+            const rows = document.getElementById('data-table').rows;
+            for (let i = 1; i < rows.length; i++) {
+                rows[i].querySelectorAll('input, select').forEach(input => input.value = '');
+            }
+        }
+
+        // Function to show the confirmation modal
+        function showModal() {
+            document.getElementById('confirmationModal').style.display = 'block';
+        }
+
+        // Function to hide the confirmation modal
+        function hideModal() {
+            document.getElementById('confirmationModal').style.display = 'none';
+        }
+
+        // Function to confirm submission of the entries
+        function confirmSubmission() {
+            hideModal();
+            saveEntries();
+        }
+
+        // Function to handle the employee selection process
+        function handleEmployeeSelection() {
+            selectedEmployee = document.getElementById('employee-dropdown').value;
+            if (selectedEmployee) {
+                document.getElementById('employee-selection').style.display = 'none';
+                buildTable();
+            }
+        }
+
+        // Initialize the app by fetching the sheet data
+        window.onload = getSheetData;
+    </script>
+</body>
+</html>
+
+
+
